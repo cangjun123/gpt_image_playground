@@ -164,7 +164,8 @@ function isPristineNewOpenAIProfile(profile: ApiProfile) {
     profile.timeout === DEFAULT_SETTINGS.timeout &&
     profile.apiMode === 'images' &&
     profile.codexCli === false &&
-    profile.apiProxy === defaultProfile.apiProxy
+    profile.apiProxy === defaultProfile.apiProxy &&
+    profile.imageGenerationStreaming !== true
 }
 
 function getImportedProfileFromMergedSettings(
@@ -484,6 +485,7 @@ export default function SettingsModal() {
         timeout: Number(profile.timeout) || DEFAULT_SETTINGS.timeout,
         apiProxy: profile.provider === 'openai' && apiProxyAvailable ? (apiProxyLocked || profile.apiProxy) : false,
         codexCli: profile.provider === 'openai' ? profile.codexCli : false,
+        imageGenerationStreaming: profile.provider === 'openai' && profile.apiMode === 'images' ? profile.imageGenerationStreaming : undefined,
       }
     })
     const fallbackProfile = createDefaultOpenAIProfile({ id: newId('openai') })
@@ -523,6 +525,7 @@ export default function SettingsModal() {
       const model = profile.model.trim() || getDefaultModelForMode(profile.apiMode)
       url.searchParams.set('model', !options.includeApiKey && options.useNewApiModel ? '{model}' : model)
       if (profile.codexCli) url.searchParams.set('codexCli', 'true')
+      if (profile.imageGenerationStreaming) url.searchParams.set('imageGenerationStreaming', 'true')
 
       let result = url.toString()
       if (!options.includeApiKey) {
@@ -1510,7 +1513,7 @@ export default function SettingsModal() {
                         activeProfile.model === DEFAULT_IMAGES_MODEL || activeProfile.model === DEFAULT_RESPONSES_MODEL
                           ? getDefaultModelForMode(apiMode)
                           : activeProfile.model
-                      updateActiveProfile({ apiMode, model: nextModel }, true)
+                      updateActiveProfile({ apiMode, model: nextModel, imageGenerationStreaming: apiMode === 'images' ? activeProfile.imageGenerationStreaming : undefined }, true)
                     }}
                     options={[
                       { label: 'Images API (/v1/images)', value: 'images' },
@@ -1569,6 +1572,27 @@ export default function SettingsModal() {
                   </div>
                   <div data-selectable-text className="text-xs text-gray-500 dark:text-gray-500">
                     开启后在请求体中追加 <code className="bg-gray-100 dark:bg-white/[0.06] px-1 py-0.5 rounded">response_format: b64_json</code>，尝试使接口直接返回 Base64 编码的图片数据而非 URL。
+                  </div>
+                </div>
+              )}
+
+              {activeProfile.provider === 'openai' && (activeProfile.apiMode ?? DEFAULT_SETTINGS.apiMode) === 'images' && (
+                <div className="block">
+                  <div className="mb-1.5 flex items-center justify-between">
+                    <span className="block text-sm text-gray-600 dark:text-gray-300">流式生图</span>
+                    <button
+                      type="button"
+                      onClick={() => updateActiveProfile({ imageGenerationStreaming: !activeProfile.imageGenerationStreaming }, true)}
+                      className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${activeProfile.imageGenerationStreaming ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'}`}
+                      role="switch"
+                      aria-checked={!!activeProfile.imageGenerationStreaming}
+                      aria-label="流式生图"
+                    >
+                      <span className={`inline-block h-3 w-3 transform rounded-full bg-white shadow transition-transform ${activeProfile.imageGenerationStreaming ? 'translate-x-[14px]' : 'translate-x-[2px]'}`} />
+                    </button>
+                  </div>
+                  <div data-selectable-text className="text-xs text-gray-500 dark:text-gray-500">
+                    开启后文生图会追加 <code className="bg-gray-100 dark:bg-white/[0.06] px-1 py-0.5 rounded">stream: true</code>、<code className="bg-gray-100 dark:bg-white/[0.06] px-1 py-0.5 rounded">partial_images: 1</code> 和 <code className="bg-gray-100 dark:bg-white/[0.06] px-1 py-0.5 rounded">response_format: b64_json</code>，并用 SSE 读取中间预览；图像编辑仍走普通模式。
                   </div>
                 </div>
               )}

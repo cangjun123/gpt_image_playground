@@ -57,6 +57,7 @@ const SUPPORT_PROMPT_IMAGE_THRESHOLD = 50
 const falRecoveryTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const customRecoveryTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const openAIWatchdogTimers = new Map<string, ReturnType<typeof setTimeout>>()
+const runningTaskControllers = new Map<string, AbortController>()
 const OPENAI_INTERRUPTED_ERROR = '请求中断'
 
 function createOpenAITimeoutError(timeoutSeconds: number) {
@@ -376,6 +377,7 @@ interface AppState {
   // 任务列表
   tasks: TaskRecord[]
   setTasks: (t: TaskRecord[]) => void
+  cancelTask: (taskId: string) => void
 
   // 搜索和筛选
   searchQuery: string
@@ -441,7 +443,8 @@ export const useStore = create<AppState>()(
           incoming.timeout !== undefined ||
           incoming.apiMode !== undefined ||
           incoming.codexCli !== undefined ||
-          incoming.apiProxy !== undefined
+          incoming.apiProxy !== undefined ||
+          incoming.imageGenerationStreaming !== undefined
         const merged = normalizeSettings({ ...previous, ...incoming })
         if (hasLegacyOverrides && incoming.profiles === undefined) {
           merged.profiles = merged.profiles.map((profile) =>
@@ -455,6 +458,7 @@ export const useStore = create<AppState>()(
                   apiMode: incoming.apiMode === 'images' || incoming.apiMode === 'responses' ? incoming.apiMode : profile.apiMode,
                   codexCli: incoming.codexCli ?? profile.codexCli,
                   apiProxy: incoming.apiProxy ?? profile.apiProxy,
+                  imageGenerationStreaming: incoming.imageGenerationStreaming ?? profile.imageGenerationStreaming,
                 }
               : profile,
           )
@@ -570,6 +574,7 @@ export const useStore = create<AppState>()(
           ? { supportPromptSkippedForImportedData: false }
           : {}),
       })),
+      cancelTask: (taskId) => cancelTask(taskId),
 
       // Search & Filter
       searchQuery: '',
@@ -680,6 +685,7 @@ export function markInterruptedOpenAIRunningTasks(tasks: TaskRecord[], now = Dat
       status: 'error',
       error: OPENAI_INTERRUPTED_ERROR,
       falRecoverable: false,
+      streamingPreviewImage: undefined,
       finishedAt: now,
       elapsed: Math.max(0, now - task.createdAt),
     }
@@ -694,6 +700,28 @@ function clearOpenAIWatchdogTimer(taskId: string) {
   const timer = openAIWatchdogTimers.get(taskId)
   if (timer) clearTimeout(timer)
   openAIWatchdogTimers.delete(taskId)
+}
+
+function clearRunningTaskController(taskId: string) {
+  runningTaskControllers.delete(taskId)
+}
+
+export function cancelTask(taskId: string) {
+  const task = useStore.getState().tasks.find((item) => item.id === taskId)
+  if (!task || task.status !== 'running') return
+
+  runningTaskControllers.get(taskId)?.abort()
+  clearRunningTaskController(taskId)
+  clearOpenAIWatchdogTimer(taskId)
+  updateTaskInStore(taskId, {
+    status: 'error',
+    error: '用户已取消任务',
+    streamingPreviewImage: undefined,
+    falRecoverable: false,
+    customRecoverable: false,
+    finishedAt: Date.now(),
+    elapsed: Date.now() - task.createdAt,
+  })
 }
 
 function failOpenAITaskIfStillRunning(taskId: string, error: string, now = Date.now()) {
@@ -812,6 +840,7 @@ function createSettingsForApiProfile(settings: AppSettings, profile: ApiProfile)
     apiMode: profile.apiMode,
     codexCli: profile.codexCli,
     apiProxy: profile.apiProxy,
+    imageGenerationStreaming: profile.imageGenerationStreaming,
     profiles: normalized.profiles.map((item) => item.id === profile.id ? profile : item),
     activeProfileId: profile.id,
   })
@@ -1195,9 +1224,10 @@ export async function submitTask(options: { allowFullMask?: boolean; useCurrentA
     elapsed: null,
   }
 
+  const { streamingPreviewImage: _streamingPreviewImage, ...persistedTask } = task
   const latestTasks = useStore.getState().tasks
   useStore.getState().setTasks([task, ...latestTasks])
-  await putTask(task)
+  await putTask(persistedTask)
 
   if (settings.clearInputAfterSubmit) {
     useStore.getState().setPrompt('')
@@ -1234,6 +1264,8 @@ async function executeTask(taskId: string) {
   let customTaskInfo: { taskId: string } | null = task.customTaskId
     ? { taskId: task.customTaskId }
     : null
+  const taskController = new AbortController()
+  runningTaskControllers.set(taskId, taskController)
 
   if (taskProvider !== 'fal' && !isAsyncCustomProviderTask(requestSettings, taskProvider, task.inputImageIds.length > 0)) {
     scheduleOpenAIWatchdog(taskId, activeProfile.timeout)
@@ -1259,6 +1291,7 @@ async function executeTask(taskId: string) {
       params: task.params,
       inputImageDataUrls: inputDataUrls,
       maskDataUrl,
+      signal: taskController.signal,
       onFalRequestEnqueued: (request) => {
         falRequestInfo = request
         updateTaskInStore(taskId, {
@@ -1273,6 +1306,13 @@ async function executeTask(taskId: string) {
           customTaskId: request.taskId,
           customRecoverable: false,
         })
+      },
+      onImageGenerationPreview: (preview) => {
+        const latest = useStore.getState().tasks.find((t) => t.id === taskId)
+        if (!latest || latest.status !== 'running') return
+        updateTaskInStore(taskId, {
+          streamingPreviewImage: preview.image,
+        }, { persist: false })
       },
     })
 
@@ -1322,6 +1362,7 @@ async function executeTask(taskId: string) {
     clearOpenAIWatchdogTimer(taskId)
     updateTaskInStore(taskId, {
       outputImages: outputIds,
+      streamingPreviewImage: undefined,
       rawImageUrls: result.rawImageUrls?.length ? result.rawImageUrls : undefined,
       actualParams,
       actualParamsByImage,
@@ -1347,6 +1388,7 @@ async function executeTask(taskId: string) {
     clearOpenAIWatchdogTimer(taskId)
     const latestTask = useStore.getState().tasks.find((t) => t.id === taskId) ?? task
     if (latestTask.status !== 'running') return
+    if (taskController.signal.aborted) return
     const latestFalRequestInfo = falRequestInfo ?? (latestTask.falRequestId && latestTask.falEndpoint
       ? { requestId: latestTask.falRequestId, endpoint: latestTask.falEndpoint }
       : null)
@@ -1390,6 +1432,7 @@ async function executeTask(taskId: string) {
       useStore.getState().setDetailTaskId(taskId)
     }
   } finally {
+    clearRunningTaskController(taskId)
     // 释放输入图片的内存缓存（已持久化到 IndexedDB，后续按需从 DB 加载）
     for (const imgId of task.inputImageIds) {
       imageCache.delete(imgId)
@@ -1397,7 +1440,7 @@ async function executeTask(taskId: string) {
   }
 }
 
-export function updateTaskInStore(taskId: string, patch: Partial<TaskRecord>) {
+export function updateTaskInStore(taskId: string, patch: Partial<TaskRecord>, options: { persist?: boolean } = {}) {
   const { tasks, setTasks } = useStore.getState()
   const updated = tasks.map((t) =>
     t.id === taskId ? { ...t, ...patch } : t,
@@ -1405,7 +1448,10 @@ export function updateTaskInStore(taskId: string, patch: Partial<TaskRecord>) {
   setTasks(updated)
   maybeOpenSupportPrompt(tasks, updated, taskId)
   const task = updated.find((t) => t.id === taskId)
-  if (task) putTask(task)
+  if (task && options.persist !== false) {
+    const { streamingPreviewImage: _streamingPreviewImage, ...persistedTask } = task
+    putTask(persistedTask)
+  }
 }
 
 /** 重试失败的任务：创建新任务并执行 */
@@ -1433,9 +1479,10 @@ export async function retryTask(task: TaskRecord) {
     elapsed: null,
   }
 
+  const { streamingPreviewImage: _streamingPreviewImage, ...persistedTask } = newTask
   const latestTasks = useStore.getState().tasks
   useStore.getState().setTasks([newTask, ...latestTasks])
-  await putTask(newTask)
+  await putTask(persistedTask)
 
   executeTask(taskId)
 }

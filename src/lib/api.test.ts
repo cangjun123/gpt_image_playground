@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_PARAMS } from '../types'
 import { DEFAULT_SETTINGS } from './apiProfiles'
 import { callImageApi } from './api'
+import * as devProxy from './devProxy'
 
 describe('callImageApi', () => {
   afterEach(() => {
@@ -176,8 +177,122 @@ describe('callImageApi', () => {
     expect((init as RequestInit).cache).toBe('no-store')
   })
 
+  it('reads streamed Images API events and returns the last streamed image', async () => {
+    const encoder = new TextEncoder()
+    const onImageGenerationPreview = vi.fn()
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode('event: image_generation.partial_image\n'))
+        controller.enqueue(encoder.encode('data: {"b64_json":"cGFydGlhbA=="}\n\n'))
+        controller.enqueue(encoder.encode('event: image_generation.completed\n'))
+        controller.enqueue(encoder.encode('data: {"data":[{"b64_json":"ZmluYWw="}]}\n\n'))
+        controller.close()
+      },
+    })
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(stream, {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+    }))
+
+    const result = await callImageApi({
+      settings: {
+        ...DEFAULT_SETTINGS,
+        apiKey: 'test-key',
+        imageGenerationStreaming: true,
+        profiles: [{
+          ...DEFAULT_SETTINGS.profiles[0],
+          apiKey: 'test-key',
+          imageGenerationStreaming: true,
+        }],
+      },
+      prompt: 'prompt',
+      params: { ...DEFAULT_PARAMS },
+      inputImageDataUrls: [],
+      onImageGenerationPreview,
+    })
+
+    const [, init] = fetchMock.mock.calls[0]
+    const body = JSON.parse(String((init as RequestInit).body))
+    expect(body).toMatchObject({
+      stream: true,
+      partial_images: 1,
+      response_format: 'b64_json',
+    })
+    expect(onImageGenerationPreview).toHaveBeenCalledWith({
+      image: 'data:image/png;base64,cGFydGlhbA==',
+    })
+    expect(onImageGenerationPreview).toHaveBeenLastCalledWith({
+      image: 'data:image/png;base64,ZmluYWw=',
+    })
+    expect(result.images).toEqual(['data:image/png;base64,ZmluYWw='])
+  })
+
+  it('falls back to normal JSON parsing when streaming is enabled but the provider returns JSON', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      data: [{ b64_json: 'anNvbg==' }],
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }))
+
+    const result = await callImageApi({
+      settings: {
+        ...DEFAULT_SETTINGS,
+        apiKey: 'test-key',
+        imageGenerationStreaming: true,
+        profiles: [{
+          ...DEFAULT_SETTINGS.profiles[0],
+          apiKey: 'test-key',
+          imageGenerationStreaming: true,
+        }],
+      },
+      prompt: 'prompt',
+      params: { ...DEFAULT_PARAMS },
+      inputImageDataUrls: [],
+    })
+
+    const [, init] = fetchMock.mock.calls[0]
+    const body = JSON.parse(String((init as RequestInit).body))
+    expect(body.stream).toBe(true)
+    expect(result.images).toEqual(['data:image/png;base64,anNvbg=='])
+  })
+
+  it('parses OpenAI-style partial image SSE payloads with top-level b64_json', async () => {
+    const encoder = new TextEncoder()
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode('event: image_generation.partial_image\n'))
+        controller.enqueue(encoder.encode('data: {"type":"image_generation.partial_image","created_at":1778597916,"partial_image_index":0,"b64_json":"iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB"}\n\n'))
+        controller.close()
+      },
+    })
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(stream, {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+    }))
+
+    const result = await callImageApi({
+      settings: {
+        ...DEFAULT_SETTINGS,
+        apiKey: 'test-key',
+        imageGenerationStreaming: true,
+        profiles: [{
+          ...DEFAULT_SETTINGS.profiles[0],
+          apiKey: 'test-key',
+          imageGenerationStreaming: true,
+        }],
+      },
+      prompt: 'prompt',
+      params: { ...DEFAULT_PARAMS },
+      inputImageDataUrls: [],
+    })
+
+    expect(result.images).toEqual(['data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB'])
+  })
+
   it('ignores stored API proxy settings when the current deployment has no proxy', async () => {
     vi.stubEnv('VITE_API_PROXY_AVAILABLE', 'false')
+    vi.spyOn(devProxy, 'readClientDevProxyConfig').mockReturnValue(null)
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
       data: [{ b64_json: 'aW1hZ2U=' }],
     }), {

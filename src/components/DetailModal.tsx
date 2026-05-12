@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo, useRef } from 'react'
-import { useStore, getCachedImage, ensureImageCached, reuseConfig, editOutputs, removeTask, updateTaskInStore, showCodexCliPrompt, getCodexCliPromptKey, retryTask } from '../store'
+import { useStore, getCachedImage, ensureImageCached, reuseConfig, editOutputs, removeTask, updateTaskInStore, showCodexCliPrompt, getCodexCliPromptKey, retryTask, cancelTask } from '../store'
 import { useCloseOnEscape } from '../hooks/useCloseOnEscape'
 import { usePreventBackgroundScroll } from '../hooks/usePreventBackgroundScroll'
 import { useTooltip } from '../hooks/useTooltip'
@@ -292,6 +292,10 @@ export default function DetailModal() {
     setDetailTaskId(null)
   }
 
+  const handleCancelTask = () => {
+    cancelTask(task.id)
+  }
+
   return (
     <div
       data-no-drag-select
@@ -408,7 +412,20 @@ export default function DetailModal() {
                 </svg>
                 {formatDuration()}
               </div>
-              {task.status === 'running' && (
+              {task.status === 'running' && task.streamingPreviewImage && (
+                <>
+                  <img
+                    ref={mainImageRef}
+                    src={task.streamingPreviewImage}
+                    className="max-w-[calc(100%-2rem)] max-h-[calc(100%-2rem)] object-contain"
+                    alt=""
+                  />
+                  <span className="absolute bottom-4 left-4 rounded bg-black/50 px-2 py-0.5 text-xs text-white backdrop-blur-sm">
+                    流式预览
+                  </span>
+                </>
+              )}
+              {task.status === 'running' && !task.streamingPreviewImage && (
                 <svg className="w-10 h-10 text-blue-400 animate-spin" fill="none" viewBox="0 0 24 24">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
@@ -684,6 +701,15 @@ export default function DetailModal() {
 
           {/* 操作按钮 */}
           <div className="grid grid-cols-4 sm:flex gap-2 pt-4 border-t border-gray-100 dark:border-white/[0.08]">
+            {task.status === 'running' && (
+              <button
+                onClick={handleCancelTask}
+                className="col-span-4 sm:flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-500/20 transition text-sm font-medium whitespace-nowrap"
+              >
+                <CloseIcon className="w-4 h-4 flex-shrink-0" />
+                取消任务
+              </button>
+            )}
             <button
               onClick={handleReuse}
               className="col-span-2 sm:flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-500/20 transition text-sm font-medium whitespace-nowrap"

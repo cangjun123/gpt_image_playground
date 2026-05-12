@@ -159,7 +159,7 @@ $env:VITE_DEFAULT_API_URL="https://api.openai.com/v1"; npm run deploy:cf
 <details>
 <summary><strong>🐳 方式三：Docker 部署</strong></summary>
 
-官方镜像已发布至 GitHub Container Registry。Docker 部署支持在运行时注入默认配置。
+Docker 部署支持在运行时注入默认配置。若你使用的是 fork 后自行修改的版本，推荐在服务器上本地构建镜像，避免继续拉取上游官方镜像。
 
 **环境变量说明：**
 
@@ -186,7 +186,43 @@ docker run -d -p 8080:80 \
 
 *(注：使用 host 网络时加 `--network host`，修改容器监听端口使用 `-e PORT=28080`)*
 
-**2. Docker Compose 示例**
+**2. Fork 仓库本地构建（推荐）**
+
+服务器安装 Docker 后，拉取你的 fork：
+
+```bash
+git clone <your-fork-url> gpt-image-playground
+cd gpt-image-playground
+cp .env.example .env
+docker compose up -d --build
+```
+
+默认会构建当前仓库代码，并将容器映射到 `8080` 端口：
+
+```text
+http://<server-ip>:8080
+```
+
+`.env` 示例：
+
+```env
+APP_PORT=8080
+DEFAULT_API_URL=http://39.102.124.3:18101
+API_PROXY_URL=http://39.102.124.3:18101
+ENABLE_API_PROXY=true
+LOCK_API_PROXY=false
+```
+
+更新 fork 后，在服务器执行：
+
+```bash
+git pull
+docker compose up -d --build
+```
+
+更详细说明见 `deploy/README-docker.md`。
+
+**3. 使用官方镜像的 Docker Compose 示例**
 
 ```yaml
 services:
@@ -201,7 +237,7 @@ services:
 
 **更新说明：**
 
-使用 `latest` 标签时，重新拉取镜像并重启即可更新（如 `docker compose pull && docker compose up -d`）。若需固定版本可使用官方提供的版本号标签（如 `0.2.x`）。
+使用官方 `latest` 标签时，重新拉取镜像并重启即可更新（如 `docker compose pull && docker compose up -d`）。若需固定版本可使用官方提供的版本号标签（如 `0.2.x`）。使用 fork 本地构建时，请用 `git pull && docker compose up -d --build` 更新。
 
 </details>
 

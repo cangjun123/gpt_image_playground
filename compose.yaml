@@ -1,0 +1,15 @@
+services:
+  gpt-image-playground:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+    image: gpt-image-playground:local
+    container_name: gpt-image-playground
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-8080}:80"
+    environment:
+      DEFAULT_API_URL: ${DEFAULT_API_URL:-http://39.102.124.3:18101}
+      API_PROXY_URL: ${API_PROXY_URL:-http://39.102.124.3:18101}
+      ENABLE_API_PROXY: ${ENABLE_API_PROXY:-true}
+      LOCK_API_PROXY: ${LOCK_API_PROXY:-false}

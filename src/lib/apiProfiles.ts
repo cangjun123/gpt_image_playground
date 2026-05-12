@@ -297,6 +297,7 @@ export function switchApiProfileProvider(profile: ApiProfile, provider: ApiProvi
       codexCli: profile.codexCli,
       apiProxy: profile.apiProxy,
       responseFormatB64Json: profile.responseFormatB64Json,
+      imageGenerationStreaming: profile.imageGenerationStreaming,
     },
   }
   const savedDraft = providerDrafts[provider]
@@ -311,6 +312,7 @@ export function switchApiProfileProvider(profile: ApiProfile, provider: ApiProvi
       codexCli: false,
       apiProxy: false,
       responseFormatB64Json: savedDraft?.responseFormatB64Json,
+      imageGenerationStreaming: savedDraft?.imageGenerationStreaming,
       providerDrafts,
     }
   }
@@ -326,6 +328,7 @@ export function switchApiProfileProvider(profile: ApiProfile, provider: ApiProvi
       codexCli: false,
       apiProxy: false,
       responseFormatB64Json: savedDraft?.responseFormatB64Json,
+      imageGenerationStreaming: savedDraft?.imageGenerationStreaming,
       providerDrafts,
     }
   }
@@ -339,6 +342,7 @@ export function switchApiProfileProvider(profile: ApiProfile, provider: ApiProvi
     codexCli: savedDraft?.codexCli ?? profile.codexCli,
     apiProxy: savedDraft?.apiProxy ?? DEFAULT_OPENAI_API_PROXY,
     responseFormatB64Json: savedDraft?.responseFormatB64Json,
+    imageGenerationStreaming: savedDraft?.imageGenerationStreaming,
     providerDrafts,
   }
 }
@@ -361,6 +365,7 @@ function normalizeProviderDraft(input: unknown, provider: ApiProvider, customPro
     codexCli: typeof input.codexCli === 'boolean' ? input.codexCli : fallback.codexCli,
     apiProxy: typeof input.apiProxy === 'boolean' ? input.apiProxy : fallback.apiProxy,
     responseFormatB64Json: input.responseFormatB64Json === true ? true : undefined,
+    imageGenerationStreaming: input.imageGenerationStreaming === true ? true : undefined,
   }
 }
 
@@ -394,6 +399,7 @@ export function normalizeApiProfile(input: unknown, fallback?: Partial<ApiProfil
     codexCli: Boolean(record.codexCli),
     apiProxy: typeof record.apiProxy === 'boolean' ? record.apiProxy : defaults.apiProxy,
     responseFormatB64Json: record.responseFormatB64Json === true ? true : undefined,
+    imageGenerationStreaming: record.imageGenerationStreaming === true ? true : undefined,
     providerDrafts: normalizeProviderDrafts(record.providerDrafts, customProviderIds),
   }
 }
@@ -424,6 +430,7 @@ export function normalizeSettings(input: Partial<AppSettings> | unknown): AppSet
     codexCli: Boolean(record.codexCli),
     apiProxy: typeof record.apiProxy === 'boolean' ? record.apiProxy : DEFAULT_OPENAI_API_PROXY,
     responseFormatB64Json: record.responseFormatB64Json === true ? true : undefined,
+    imageGenerationStreaming: record.imageGenerationStreaming === true ? true : undefined,
   })
   const profiles = Array.isArray(record.profiles) && record.profiles.length
     ? record.profiles.map((profile) => normalizeApiProfile(profile, undefined, customProviderIds))
@@ -441,6 +448,7 @@ export function normalizeSettings(input: Partial<AppSettings> | unknown): AppSet
     apiMode: active.apiMode,
     codexCli: active.codexCli,
     apiProxy: active.apiProxy,
+    imageGenerationStreaming: active.imageGenerationStreaming,
     customProviders,
     providerOrder: Array.isArray(record.providerOrder) ? record.providerOrder.map(String) : undefined,
     clearInputAfterSubmit: typeof record.clearInputAfterSubmit === 'boolean' ? record.clearInputAfterSubmit : false,
@@ -542,6 +550,7 @@ export function getActiveApiProfile(settings: Partial<AppSettings> | unknown): A
     apiMode: record.apiMode === 'images' || record.apiMode === 'responses' ? record.apiMode : profile.apiMode,
     codexCli: typeof record.codexCli === 'boolean' ? record.codexCli : profile.codexCli,
     apiProxy: typeof record.apiProxy === 'boolean' ? record.apiProxy : profile.apiProxy,
+    imageGenerationStreaming: record.imageGenerationStreaming === true ? true : undefined,
   }
 }
 
@@ -563,7 +572,8 @@ function isDefaultOpenAIProfile(profile: ApiProfile): boolean {
     profile.timeout === DEFAULT_API_TIMEOUT &&
     profile.apiMode === 'images' &&
     profile.codexCli === false &&
-    profile.apiProxy === DEFAULT_OPENAI_API_PROXY
+    profile.apiProxy === DEFAULT_OPENAI_API_PROXY &&
+    profile.imageGenerationStreaming !== true
 }
 
 function hasOnlyDefaultProfiles(settings: AppSettings): boolean {
@@ -589,6 +599,7 @@ function getApiProfileDedupKey(profile: ApiProfile): string {
     profile.apiKey.trim(),
     profile.model.trim(),
     profile.apiMode,
+    profile.imageGenerationStreaming === true,
   ])
 }
 
@@ -598,6 +609,7 @@ function getApiProfileConnectionKey(profile: ApiProfile): string {
     profile.baseUrl.trim().replace(/\/+$/, '').toLowerCase(),
     profile.model.trim(),
     profile.apiMode,
+    profile.imageGenerationStreaming === true,
   ])
 }
 

@@ -194,6 +194,7 @@ export async function getFalQueuedImageResult(
 
 export async function callFalAiImageApi(opts: CallApiOptions, profile: ApiProfile): Promise<CallApiResult> {
   try {
+    if (opts.signal?.aborted) throw new DOMException('Aborted', 'AbortError')
     if (opts.maskDataUrl) {
       assertMaskEditFileSize('遮罩主图文件', getDataUrlDecodedByteSize(opts.inputImageDataUrls[0] ?? ''))
       assertMaskEditFileSize('遮罩文件', getDataUrlDecodedByteSize(opts.maskDataUrl))
@@ -216,6 +217,7 @@ export async function callFalAiImageApi(opts: CallApiOptions, profile: ApiProfil
         opts.onFalRequestEnqueued?.({ requestId, endpoint })
       },
     })
+    if (opts.signal?.aborted) throw new DOMException('Aborted', 'AbortError')
     const payload = result.data as FalApiResponse
     opts.onFalRequestEnqueued?.({ requestId: result.requestId, endpoint })
     return parseFalResult(payload, opts.params, getFalCustomBaseUrlLabel(profile))
