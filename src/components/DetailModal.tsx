@@ -320,7 +320,7 @@ export default function DetailModal() {
 
         {/* 左侧：图片 */}
         <div ref={imagePanelRef} className="md:w-1/2 w-full h-64 md:h-auto bg-gray-100 dark:bg-black/20 relative flex items-center justify-center flex-shrink-0 min-h-[16rem]">
-          {task.status === 'done' && outputLen > 0 && currentOutputPreviewSrc && (
+          {outputLen > 0 && currentOutputPreviewSrc && (
             <>
               <img
                 ref={mainImageRef}
@@ -412,7 +412,7 @@ export default function DetailModal() {
                 </svg>
                 {formatDuration()}
               </div>
-              {task.status === 'running' && task.streamingPreviewImage && (
+              {task.status === 'running' && outputLen === 0 && task.streamingPreviewImage && (
                 <>
                   <img
                     ref={mainImageRef}
@@ -425,7 +425,7 @@ export default function DetailModal() {
                   </span>
                 </>
               )}
-              {task.status === 'running' && !task.streamingPreviewImage && (
+              {task.status === 'running' && outputLen === 0 && !task.streamingPreviewImage && (
                 <svg className="w-10 h-10 text-blue-400 animate-spin" fill="none" viewBox="0 0 24 24">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />

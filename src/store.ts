@@ -1264,6 +1264,13 @@ async function executeTask(taskId: string) {
   let customTaskInfo: { taskId: string } | null = task.customTaskId
     ? { taskId: task.customTaskId }
     : null
+  const incrementalImages: Array<{
+    dataUrl: string
+    imageId: string
+    actualParams?: Partial<TaskParams>
+    revisedPrompt?: string
+    rawImageUrl?: string
+  }> = []
   const taskController = new AbortController()
   runningTaskControllers.set(taskId, taskController)
 
@@ -1314,23 +1321,49 @@ async function executeTask(taskId: string) {
           streamingPreviewImage: preview.image,
         }, { persist: false })
       },
+      onImageGenerationImageDone: async (image) => {
+        const latest = useStore.getState().tasks.find((t) => t.id === taskId)
+        if (!latest || latest.status !== 'running' || taskController.signal.aborted) return
+
+        const imgId = await storeImage(image.image, 'generated')
+        cacheImage(imgId, image.image)
+        incrementalImages.push({
+          dataUrl: image.image,
+          imageId: imgId,
+          actualParams: image.actualParams,
+          revisedPrompt: image.revisedPrompt,
+          rawImageUrl: image.rawImageUrl,
+        })
+
+        const current = useStore.getState().tasks.find((t) => t.id === taskId)
+        if (!current || current.status !== 'running') return
+
+        updateTaskInStore(taskId, {
+          outputImages: [...current.outputImages, imgId],
+          streamingPreviewImage: undefined,
+        })
+      },
     })
 
     const latestBeforeSuccess = useStore.getState().tasks.find((t) => t.id === taskId)
     if (!latestBeforeSuccess || latestBeforeSuccess.status !== 'running') return
 
     // 存储输出图片
-    const outputIds: string[] = []
-    for (const dataUrl of result.images) {
-      const imgId = await storeImage(dataUrl, 'generated')
-      cacheImage(imgId, dataUrl)
-      outputIds.push(imgId)
+    const outputIds: string[] = incrementalImages.map((item) => item.imageId)
+    if (outputIds.length === 0) {
+      for (const dataUrl of result.images) {
+        const imgId = await storeImage(dataUrl, 'generated')
+        cacheImage(imgId, dataUrl)
+        outputIds.push(imgId)
+      }
     }
     const isAsyncCustomTask = taskProvider !== 'fal' && taskProvider !== 'openai' && Boolean(customTaskInfo)
     const actualParamsList = taskProvider === 'fal'
       ? await resolveImageSizeParamsList(result.images, result.actualParamsList)
       : isAsyncCustomTask
       ? await readImageSizeParamsList(result.images)
+      : incrementalImages.length > 0
+      ? incrementalImages.map((item) => item.actualParams)
       : result.actualParamsList
     const actualParams = (() => {
       if (taskProvider === 'fal') return firstActualParams(actualParamsList)
@@ -1339,15 +1372,18 @@ async function executeTask(taskId: string) {
     })()
     const shouldStoreRevisedPrompts = taskProvider !== 'fal' && !isAsyncCustomTask
     const actualParamsByImage = mapActualParamsByImage(outputIds, actualParamsList)
-    const revisedPromptByImage = shouldStoreRevisedPrompts ? result.revisedPrompts?.reduce<Record<string, string>>((acc, revisedPrompt, index) => {
+    const revisedPrompts = incrementalImages.length > 0
+      ? incrementalImages.map((item) => item.revisedPrompt)
+      : result.revisedPrompts
+    const revisedPromptByImage = shouldStoreRevisedPrompts ? revisedPrompts?.reduce<Record<string, string>>((acc, revisedPrompt, index) => {
       const imgId = outputIds[index]
       if (imgId && revisedPrompt && revisedPrompt.trim()) acc[imgId] = revisedPrompt
       return acc
     }, {}) : undefined
-    const promptWasRevised = shouldStoreRevisedPrompts && result.revisedPrompts?.some(
+    const promptWasRevised = shouldStoreRevisedPrompts && revisedPrompts?.some(
       (revisedPrompt) => revisedPrompt?.trim() && revisedPrompt.trim() !== task.prompt.trim(),
     )
-    const hasRevisedPromptValue = shouldStoreRevisedPrompts && result.revisedPrompts?.some((revisedPrompt) => revisedPrompt?.trim())
+    const hasRevisedPromptValue = shouldStoreRevisedPrompts && revisedPrompts?.some((revisedPrompt) => revisedPrompt?.trim())
     if (taskProvider === 'openai' && !activeProfile.codexCli) {
       if (promptWasRevised) {
         showCodexCliPrompt()
@@ -1363,7 +1399,9 @@ async function executeTask(taskId: string) {
     updateTaskInStore(taskId, {
       outputImages: outputIds,
       streamingPreviewImage: undefined,
-      rawImageUrls: result.rawImageUrls?.length ? result.rawImageUrls : undefined,
+      rawImageUrls: incrementalImages.length > 0
+        ? incrementalImages.map((item) => item.rawImageUrl).filter((url): url is string => Boolean(url))
+        : result.rawImageUrls?.length ? result.rawImageUrls : undefined,
       actualParams,
       actualParamsByImage,
       revisedPromptByImage: revisedPromptByImage && Object.keys(revisedPromptByImage).length > 0 ? revisedPromptByImage : undefined,

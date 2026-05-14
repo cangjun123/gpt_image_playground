@@ -20,6 +20,12 @@ export interface CallApiOptions {
   onFalRequestEnqueued?: (request: { requestId: string; endpoint: string }) => void
   onCustomTaskEnqueued?: (task: { taskId: string }) => void
   onImageGenerationPreview?: (preview: { image: string }) => void
+  onImageGenerationImageDone?: (image: {
+    image: string
+    actualParams?: Partial<TaskParams>
+    revisedPrompt?: string
+    rawImageUrl?: string
+  }) => void | Promise<void>
 }
 
 export interface CallApiResult {

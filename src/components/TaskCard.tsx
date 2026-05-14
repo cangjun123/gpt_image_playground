@@ -265,7 +265,52 @@ export default function TaskCard({
       <div className="flex h-40">
         {/* 左侧图片区域 */}
         <div className="w-40 min-w-[10rem] h-full bg-gray-100 dark:bg-black/20 relative flex items-center justify-center overflow-hidden flex-shrink-0">
-          {task.status === 'running' && task.streamingPreviewImage && (
+          {task.outputImages.length > 0 && thumbSrc && (
+            <>
+              <img
+                src={thumbSrc}
+                data-image-id={task.outputImages[0]}
+                className="saveable-image w-full h-full object-cover"
+                loading="lazy"
+                alt=""
+              />
+              {task.outputImages.length > 1 && (
+                <span className="absolute bottom-1 right-1 bg-black/60 text-white text-xs px-1.5 py-0.5 rounded">
+                  {task.outputImages.length}
+                </span>
+              )}
+              {task.status === 'running' && (
+                <span className="absolute bottom-1 left-1 bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded">
+                  生成中
+                </span>
+              )}
+            </>
+          )}
+          {task.status === 'running' && task.outputImages.length > 0 && !thumbSrc && (
+            <div className="flex flex-col items-center gap-2">
+              <svg
+                className="w-8 h-8 text-blue-400 animate-spin"
+                fill="none"
+                viewBox="0 0 24 24"
+              >
+                <circle
+                  className="opacity-25"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  strokeWidth="4"
+                />
+                <path
+                  className="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                />
+              </svg>
+              <span className="text-xs text-gray-400 dark:text-gray-500">生成中...</span>
+            </div>
+          )}
+          {task.status === 'running' && task.outputImages.length === 0 && task.streamingPreviewImage && (
             <>
               <img
                 src={task.streamingPreviewImage}
@@ -277,7 +322,7 @@ export default function TaskCard({
               </span>
             </>
           )}
-          {task.status === 'running' && !task.streamingPreviewImage && (
+          {task.status === 'running' && task.outputImages.length === 0 && !task.streamingPreviewImage && (
             <div className="flex flex-col items-center gap-2">
               <svg
                 className="w-8 h-8 text-blue-400 animate-spin"
@@ -340,22 +385,6 @@ export default function TaskCard({
                 失败
               </span>
             </div>
-          )}
-          {task.status === 'done' && thumbSrc && (
-            <>
-              <img
-                src={thumbSrc}
-                data-image-id={task.outputImages[0]}
-                className="saveable-image w-full h-full object-cover"
-                loading="lazy"
-                alt=""
-              />
-              {task.outputImages.length > 1 && (
-                <span className="absolute bottom-1 right-1 bg-black/60 text-white text-xs px-1.5 py-0.5 rounded">
-                  {task.outputImages.length}
-                </span>
-              )}
-            </>
           )}
           {task.status === 'done' && !thumbSrc && (
             <svg

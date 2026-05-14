@@ -433,7 +433,20 @@ async function callImagesApi(opts: CallApiOptions, profile: ApiProfile, customPr
 async function callImagesApiConcurrent(opts: CallApiOptions, profile: ApiProfile, n: number, customProvider?: CustomProviderDefinition | null): Promise<CallApiResult> {
   const singleOpts = { ...opts, params: { ...opts.params, n: 1, quality: 'auto' as const } }
   const results = await Promise.allSettled(
-    Array.from({ length: n }).map(() => callImagesApiSingle(singleOpts, profile, customProvider)),
+    Array.from({ length: n }).map(async () => {
+      const result = await callImagesApiSingle(singleOpts, profile, customProvider)
+      if (opts.onImageGenerationImageDone) {
+        for (let i = 0; i < result.images.length; i++) {
+          await opts.onImageGenerationImageDone({
+            image: result.images[i],
+            actualParams: result.actualParamsList?.[i] ?? result.actualParams,
+            revisedPrompt: result.revisedPrompts?.[i],
+            rawImageUrl: result.rawImageUrls?.[i],
+          })
+        }
+      }
+      return result
+    }),
   )
 
   const successfulResults = results

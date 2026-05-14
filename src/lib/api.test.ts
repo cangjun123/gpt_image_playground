@@ -100,6 +100,76 @@ describe('callImageApi', () => {
     }])
   })
 
+  it('notifies each completed image during Codex CLI concurrent generation', async () => {
+    const onImageGenerationImageDone = vi.fn()
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        output_format: 'png',
+        quality: 'medium',
+        size: '1024x1024',
+        data: [{ b64_json: 'Zmlyc3Q=', revised_prompt: 'first revised' }],
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        output_format: 'png',
+        quality: 'medium',
+        size: '1536x1024',
+        data: [{ b64_json: 'c2Vjb25k', revised_prompt: 'second revised' }],
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        error: { message: 'one failed' },
+      }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' },
+      }))
+
+    const result = await callImageApi({
+      settings: { ...DEFAULT_SETTINGS, apiKey: 'test-key', codexCli: true },
+      prompt: 'prompt',
+      params: { ...DEFAULT_PARAMS, n: 3 },
+      inputImageDataUrls: [],
+      onImageGenerationImageDone,
+    })
+
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(onImageGenerationImageDone).toHaveBeenCalledTimes(2)
+    expect(onImageGenerationImageDone).toHaveBeenNthCalledWith(1, {
+      image: 'data:image/png;base64,Zmlyc3Q=',
+      actualParams: {
+        output_format: 'png',
+        quality: 'medium',
+        size: '1024x1024',
+      },
+      revisedPrompt: 'first revised',
+      rawImageUrl: undefined,
+    })
+    expect(onImageGenerationImageDone).toHaveBeenNthCalledWith(2, {
+      image: 'data:image/png;base64,c2Vjb25k',
+      actualParams: {
+        output_format: 'png',
+        quality: 'medium',
+        size: '1536x1024',
+      },
+      revisedPrompt: 'second revised',
+      rawImageUrl: undefined,
+    })
+    expect(result.images).toEqual([
+      'data:image/png;base64,Zmlyc3Q=',
+      'data:image/png;base64,c2Vjb25k',
+    ])
+    expect(result.actualParams).toEqual({
+      output_format: 'png',
+      quality: 'medium',
+      size: '1024x1024',
+      n: 2,
+    })
+  })
+
   it('uses the same-origin API proxy path when API proxy is enabled', async () => {
     vi.stubEnv('VITE_API_PROXY_AVAILABLE', 'true')
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
