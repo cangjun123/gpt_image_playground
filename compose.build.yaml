@@ -1,0 +1,6 @@
+services:
+  gpt-image-playground:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+    image: gpt-image-playground:local

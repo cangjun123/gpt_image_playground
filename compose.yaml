@@ -1,9 +1,6 @@
 services:
   gpt-image-playground:
-    build:
-      context: .
-      dockerfile: deploy/Dockerfile
-    image: gpt-image-playground:local
+    image: ${APP_IMAGE:-ghcr.io/cangjun123/gpt_image_playground:latest}
     container_name: gpt-image-playground
     restart: unless-stopped
     ports:

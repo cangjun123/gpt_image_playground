@@ -1,8 +1,23 @@
-# Docker deployment for forked repositories
+# Docker Deployment
 
-This project can be deployed from your own fork without using the upstream GHCR image.
+This fork is designed to deploy from a prebuilt GHCR image. GitHub Actions builds and publishes the image after each push to `main`, so the cloud server does not need to run `docker build`.
 
-## Server setup
+## Image
+
+Default image:
+
+```text
+ghcr.io/cangjun123/gpt_image_playground:latest
+```
+
+GitHub Actions also publishes branch and commit tags such as:
+
+```text
+ghcr.io/cangjun123/gpt_image_playground:main
+ghcr.io/cangjun123/gpt_image_playground:main-<commit>
+```
+
+## Server Setup
 
 Install Docker on the cloud server:
 
@@ -17,44 +32,97 @@ Clone your fork:
 ```bash
 git clone <your-fork-url> gpt-image-playground
 cd gpt-image-playground
-```
-
-Create the environment file:
-
-```bash
 cp .env.example .env
 ```
 
-Edit `.env` if needed:
+Edit `.env`:
 
 ```env
-APP_PORT=8080
+APP_PORT=7070
+APP_IMAGE=ghcr.io/cangjun123/gpt_image_playground:latest
 DEFAULT_API_URL=http://39.102.124.3:18101
 API_PROXY_URL=http://39.102.124.3:18101
 ENABLE_API_PROXY=true
-LOCK_API_PROXY=false
+LOCK_API_PROXY=true
 ```
 
-Build and start:
+If the GHCR package is private, log in first:
 
 ```bash
-docker compose up -d --build
+docker login ghcr.io
+```
+
+Use your GitHub username and a Personal Access Token with `read:packages`. Public packages do not require login.
+
+Start:
+
+```bash
+docker compose pull
+docker compose up -d
 ```
 
 Open:
 
 ```text
-http://<server-ip>:8080
+http://<server-ip>:7070
 ```
 
-## Update
+## Maintenance Flow
 
-After pushing changes to your fork:
+After local changes are ready:
 
 ```bash
-git pull
-docker compose up -d --build
+git add .
+git commit -m "your change"
+git push origin main
 ```
+
+Then open GitHub Actions and wait for `Build and Publish Docker Image` to finish successfully.
+
+Update the server:
+
+```bash
+cd ~/gpt-image-playground
+docker compose pull
+docker compose up -d
+docker compose logs -f
+```
+
+If `compose.yaml` or `.env.example` changed and you keep a full clone on the server, pull the repo too:
+
+```bash
+git fetch origin
+git reset --hard origin/main
+docker compose pull
+docker compose up -d
+```
+
+Keep server-only settings in `.env`; do not edit source files on the deployment server.
+
+## Rollback
+
+Set `APP_IMAGE` in `.env` to a known working tag:
+
+```env
+APP_IMAGE=ghcr.io/cangjun123/gpt_image_playground:main-<commit>
+```
+
+Then run:
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+## Local Build Fallback
+
+If GHCR is unavailable or you intentionally want to build on the server:
+
+```bash
+docker compose -f compose.yaml -f compose.build.yaml up -d --build
+```
+
+This uses the local `deploy/Dockerfile` and tags the image as `gpt-image-playground:local`.
 
 ## Notes
 

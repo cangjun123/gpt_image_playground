@@ -159,7 +159,7 @@ $env:VITE_DEFAULT_API_URL="https://api.openai.com/v1"; npm run deploy:cf
 <details>
 <summary><strong>🐳 方式三：Docker 部署</strong></summary>
 
-Docker 部署支持在运行时注入默认配置。若你使用的是 fork 后自行修改的版本，推荐在服务器上本地构建镜像，避免继续拉取上游官方镜像。
+Docker 部署支持在运行时注入默认配置。本 fork 已配置 GitHub Actions：每次推送 `main` 分支后会自动构建镜像并发布到 GitHub Container Registry，服务器只需要拉取镜像，不必在云服务器上执行 Docker 构建。
 
 **环境变量说明：**
 
@@ -186,18 +186,19 @@ docker run -d -p 8080:80 \
 
 *(注：使用 host 网络时加 `--network host`，修改容器监听端口使用 `-e PORT=28080`)*
 
-**2. Fork 仓库本地构建（推荐）**
+**2. Fork 镜像部署（推荐）**
 
-服务器安装 Docker 后，拉取你的 fork：
+服务器安装 Docker 后，拉取你的 fork，或只保留 `compose.yaml` 与 `.env`：
 
 ```bash
 git clone <your-fork-url> gpt-image-playground
 cd gpt-image-playground
 cp .env.example .env
-docker compose up -d --build
+docker compose pull
+docker compose up -d
 ```
 
-默认会构建当前仓库代码，并将容器映射到 `8080` 端口：
+默认会拉取 `ghcr.io/cangjun123/gpt_image_playground:latest`，并将容器映射到 `8080` 端口：
 
 ```text
 http://<server-ip>:8080
@@ -207,17 +208,48 @@ http://<server-ip>:8080
 
 ```env
 APP_PORT=8080
+APP_IMAGE=ghcr.io/cangjun123/gpt_image_playground:latest
 DEFAULT_API_URL=http://39.102.124.3:18101
 API_PROXY_URL=http://39.102.124.3:18101
 ENABLE_API_PROXY=true
 LOCK_API_PROXY=false
 ```
 
-更新 fork 后，在服务器执行：
+如果 GHCR package 是私有的，服务器需要先登录：
 
 ```bash
-git pull
-docker compose up -d --build
+docker login ghcr.io
+```
+
+用户名填写 GitHub 用户名，密码使用带 `read:packages` 权限的 Personal Access Token。若 package 设置为 public，则不需要登录。
+
+**后续维护流程：**
+
+1. 本地修改代码并提交：
+
+```bash
+git add .
+git commit -m "your change"
+git push origin main
+```
+
+2. 到 GitHub 仓库的 **Actions -> Build and Publish Docker Image** 等待构建成功。
+
+3. 云服务器更新容器：
+
+```bash
+cd ~/gpt-image-playground
+docker compose pull
+docker compose up -d
+docker compose logs -f
+```
+
+如需回滚到某个固定版本，可以把 `.env` 里的 `APP_IMAGE` 改成 Actions 生成的 `main-<commit>` 标签，然后重新执行 `docker compose pull && docker compose up -d`。
+
+本地临时构建仍然可用：
+
+```bash
+docker compose -f compose.yaml -f compose.build.yaml up -d --build
 ```
 
 更详细说明见 `deploy/README-docker.md`。
@@ -237,7 +269,7 @@ services:
 
 **更新说明：**
 
-使用官方 `latest` 标签时，重新拉取镜像并重启即可更新（如 `docker compose pull && docker compose up -d`）。若需固定版本可使用官方提供的版本号标签（如 `0.2.x`）。使用 fork 本地构建时，请用 `git pull && docker compose up -d --build` 更新。
+使用镜像部署时，重新拉取镜像并重启即可更新（如 `docker compose pull && docker compose up -d`）。若需固定版本可使用版本号标签或 `main-<commit>` 标签。本地构建模式才需要 `docker compose up -d --build`。
 
 </details>
 
